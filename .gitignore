@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+error.log
+ngrok_url.txt
+.vercel/
+.vercel-tmp/
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+error.log
+ngrok_url.txt
+.vercel-tmp/
