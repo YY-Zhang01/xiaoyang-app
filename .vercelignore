@@ -1,0 +1,16 @@
+# Vercel CLI 部署时的忽略规则（存在 .vercelignore 时它会【覆盖】.gitignore）
+# 关键：这里【不】忽略 knowledge/ —— 笔记要随部署一起上传到 Vercel，
+#       否则 serverless 上 RAG 检索不到任何笔记。
+# 而 .gitignore 里忽略 knowledge/，是为了不把个人笔记推上公开 GitHub 仓库。
+
+.git
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+chroma_db/
+data/
+ngrok_url.txt
+.vercel/
+tests/
