@@ -116,7 +116,7 @@ async def wechat_receive(request: Request):
         store = get_memory_store(settings)
         # 三个入口（App / 网页 / 企业微信）共用同一份记忆，都归到 settings.user_id
         mgr = MemoryManager(settings.user_id, store, llm, settings)
-        msgs = mgr.messages_for_llm()
+        msgs = mgr.messages_for_llm(content)
         msgs.append({"role": "user", "content": content})
         reply = llm.chat(msgs)
         mgr.record_turn(content, reply)

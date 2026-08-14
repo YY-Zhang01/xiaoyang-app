@@ -59,6 +59,10 @@ class Settings:
     # 完整保留的最近消息条数；超出部分会被压缩成长期记忆
     history_window: int = 20
     summarize_trigger: int = 32
+    # 长期记忆容量：总量上限 / 每类上限 / 每次注入条数
+    max_memories_total: int = 300
+    max_memories_per_category: int = 50
+    memory_retrieve_top_k: int = 8
 
     # ---- RAG 知识库 ----
     rag_enabled: bool = True
@@ -123,6 +127,9 @@ def get_settings() -> Settings:
             upstash_redis_rest_token=_env("UPSTASH_REDIS_REST_TOKEN"),
             history_window=_env_int("HISTORY_WINDOW", 20),
             summarize_trigger=_env_int("SUMMARIZE_TRIGGER", 32),
+            max_memories_total=_env_int("MAX_MEMORIES_TOTAL", 300),
+            max_memories_per_category=_env_int("MAX_MEMORIES_PER_CATEGORY", 50),
+            memory_retrieve_top_k=_env_int("MEMORY_RETRIEVE_TOP_K", 8),
             rag_enabled=_env_bool("RAG_ENABLED", True),
             rag_backend=_env("RAG_BACKEND", "bm25").strip().lower(),
             knowledge_dir=_env("KNOWLEDGE_DIR", "knowledge"),

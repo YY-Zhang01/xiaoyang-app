@@ -21,6 +21,29 @@ class DeepSeekError(Exception):
     """调用 DeepSeek 失败时抛出，message 面向用户友好。"""
 
 
+def _parse_facts(out: str) -> list[dict]:
+    """解析「类别|重要度|内容」格式的摘要输出，对不规范行做容错。"""
+    facts: list[dict] = []
+    for line in out.splitlines():
+        line = line.strip().lstrip("-•*0123456789.、 ").strip()
+        if not line:
+            continue
+        parts = line.split("|", 2)
+        if len(parts) == 3:
+            category = parts[0].strip() or "其他"
+            try:
+                importance = int(parts[1].strip())
+            except ValueError:
+                importance = 3
+            importance = max(1, min(5, importance))
+            content = parts[2].strip()
+        else:
+            category, importance, content = "其他", 3, line
+        if content:
+            facts.append({"category": category, "importance": importance, "content": content})
+    return facts[:8]
+
+
 class DeepSeekClient:
     def __init__(self, settings=None):
         self.settings = settings or get_settings()
@@ -135,12 +158,19 @@ class DeepSeekClient:
             raise DeepSeekError(f"和 DeepSeek 的连接出了点问题：{type(e).__name__}") from e
 
     # ------------------------------------------------------------------
-    def summarize_to_facts(self, conversation_text: str) -> list[str]:
-        """把一段对话压缩成小洋该长期记住的事实（每条一句话）。"""
+    def summarize_to_facts(self, conversation_text: str) -> list[dict]:
+        """把一段对话压缩成带「分类 + 重要度」的长期记忆事实。
+
+        返回 [{"category": str, "importance": int(1-5), "content": str}, ...]
+        """
         system = (
             "你是小洋的记忆整理器。把对话里关于用户的重要事实、偏好、计划、情绪，"
-            "压缩成一条条第三人称的长期记忆。要求：每条一句话、客观、只写值得以后想起的，"
-            "最多 8 条。只输出事实本身，每行一条，不要编号、不要引号、不要任何解释。"
+            "压缩成一条条第三人称的长期记忆。\n"
+            "每条一行，格式严格为：类别|重要度|内容\n"
+            "- 类别：从「个人、目标、健康、学习、情绪、其他」里选一个\n"
+            "- 重要度：1-5 的整数（5=非常重要，长期记住；1=琐碎，可忘）\n"
+            "- 内容：一句话，客观，第三人称\n"
+            "最多 8 条。只输出这些行，不要编号、不要引号、不要任何解释。"
         )
         try:
             out = self.chat(
@@ -149,13 +179,8 @@ class DeepSeekClient:
                     {"role": "user", "content": conversation_text},
                 ],
                 temperature=0.3,
-                max_tokens=400,
+                max_tokens=500,
             )
         except DeepSeekError:
             return []
-        facts: list[str] = []
-        for line in out.splitlines():
-            cleaned = line.strip().lstrip("-•*0123456789.、 ").strip()
-            if cleaned:
-                facts.append(cleaned)
-        return facts[:8]
+        return _parse_facts(out)

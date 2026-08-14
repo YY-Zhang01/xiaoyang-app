@@ -32,7 +32,7 @@ def main() -> None:
         if not user_input.strip():
             continue
 
-        msgs = mgr.messages_for_llm()
+        msgs = mgr.messages_for_llm(user_input)
         msgs.append({"role": "user", "content": user_input})
         try:
             reply = llm.chat(msgs)

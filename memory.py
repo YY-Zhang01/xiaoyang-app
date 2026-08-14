@@ -24,6 +24,7 @@ import httpx
 
 from config import get_settings
 from prompt import SYSTEM_PROMPT
+from rag import tokenize
 
 
 # ============================================================
@@ -32,7 +33,7 @@ from prompt import SYSTEM_PROMPT
 @dataclass
 class MemoryState:
     conversation: list[dict] = field(default_factory=list)  # {role, content, ts}
-    memories: list[dict] = field(default_factory=list)      # {content, ts}
+    memories: list[dict] = field(default_factory=list)      # {content, category, importance, ts}
 
 
 # ============================================================
@@ -180,24 +181,41 @@ class MemoryManager:
         self.state = store.load(user_id)
 
     # ------------------------------------------------------------------
-    def system_prompt(self) -> str:
-        """人设 + 长期记忆。记忆是"自然记得"，不是逐条背诵。"""
+    def system_prompt(self, user_message: str = "") -> str:
+        """人设 + 按相关度挑出的长期记忆。记忆是"自然记得"，不是逐条背诵。"""
         parts = [SYSTEM_PROMPT]
-        if self.state.memories:
-            recent = self.state.memories[-20:]
-            lines = "\n".join(f"- {m['content']}" for m in recent)
+        relevant = self.retrieve_relevant(user_message, self.settings.memory_retrieve_top_k)
+        if relevant:
+            lines = "\n".join(f"- {m['content']}" for m in relevant)
             parts.append(
-                "你记得的关于他的事（长期记忆，自然融入对话，不要逐条复述，也不要强调'我记得'）：\n"
+                "你记得的关于他的事（长期记忆，按相关度挑出来的，自然融入对话，不要逐条复述，也不要强调'我记得'）：\n"
                 + lines
             )
         return "\n\n".join(parts)
 
-    def messages_for_llm(self) -> list[dict]:
+    def messages_for_llm(self, user_message: str = "") -> list[dict]:
         """返回准备送给 LLM 的消息（含 system，不含本轮用户消息）。"""
-        msgs = [{"role": "system", "content": self.system_prompt()}]
+        msgs = [{"role": "system", "content": self.system_prompt(user_message)}]
         for m in self.state.conversation:
             msgs.append({"role": m["role"], "content": m["content"]})
         return msgs
+
+    def retrieve_relevant(self, user_message: str, k: int) -> list[dict]:
+        """按「关键词相关度 + 重要度」从长期记忆里挑最相关的 k 条。
+
+        没有关键词命中也无妨：这时退化为按重要度排序，保证核心记忆始终在场。
+        """
+        memories = self.state.memories
+        if not memories:
+            return []
+        q_tokens = set(tokenize(user_message)) if user_message else set()
+        scored: list[tuple[int, dict]] = []
+        for m in memories:
+            overlap = len(q_tokens & set(tokenize(m.get("content", ""))))
+            importance = int(m.get("importance", 3))
+            scored.append((overlap * 3 + importance, m))
+        scored.sort(key=lambda x: (x[0], x[1].get("ts", 0)), reverse=True)
+        return [m for _, m in scored[:k]]
 
     # ------------------------------------------------------------------
     def record_turn(self, user_text: str, reply_text: str) -> None:
@@ -220,18 +238,39 @@ class MemoryManager:
             facts = self.llm.summarize_to_facts(text)
             now = time.time()
             for f in facts:
-                self.state.memories.append({"content": f, "ts": now})
+                self.state.memories.append({
+                    "content": f["content"],
+                    "category": f.get("category", "其他"),
+                    "importance": int(f.get("importance", 3)),
+                    "ts": now,
+                })
         except Exception:
             pass  # 摘要失败不致命，照常截断窗口
-        # 去重 + 限量（只留最近 60 条长期记忆）
-        seen: set[str] = set()
-        deduped: list[dict] = []
-        for m in self.state.memories:
-            if m["content"] not in seen:
-                seen.add(m["content"])
-                deduped.append(m)
-        self.state.memories = deduped[-60:]
         self.state.conversation = conv[-keep:]
+        self._retain()
+
+    def _retain(self) -> None:
+        """去重 + 按类别限额 + 按重要度淘汰（重要的多留、琐碎的先删）。"""
+        # 1. 去重：同一条内容只留重要度更高的那版
+        by_content: dict[str, dict] = {}
+        for m in self.state.memories:
+            key = m["content"]
+            if key not in by_content or m.get("importance", 0) > by_content[key].get("importance", 0):
+                by_content[key] = m
+        memories = list(by_content.values())
+
+        # 2. 每个类别各自限额（防止某类记忆刷屏挤掉别的类）
+        per_cat: dict[str, list[dict]] = {}
+        for m in memories:
+            per_cat.setdefault(m.get("category", "其他"), []).append(m)
+        kept: list[dict] = []
+        for items in per_cat.values():
+            items.sort(key=lambda m: (m.get("importance", 0), m.get("ts", 0)), reverse=True)
+            kept.extend(items[: self.settings.max_memories_per_category])
+
+        # 3. 总量限额：超出则挤掉（重要度低、更旧）的
+        kept.sort(key=lambda m: (m.get("importance", 0), m.get("ts", 0)), reverse=True)
+        self.state.memories = kept[: self.settings.max_memories_total]
 
     def reset(self) -> None:
         self.state.conversation = []

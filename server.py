@@ -83,7 +83,7 @@ def _retrieve_context(query: str) -> tuple[str, list[str]]:
 
 
 def _build_llm_messages(mgr: MemoryManager, message: str, ctx: str) -> list[dict]:
-    msgs = mgr.messages_for_llm()
+    msgs = mgr.messages_for_llm(message)
     msgs.append({"role": "user", "content": message})
     if ctx:
         msgs.insert(
