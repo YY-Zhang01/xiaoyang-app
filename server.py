@@ -15,6 +15,7 @@
 import json
 import os
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -97,6 +98,19 @@ def health():
         "rag": settings.rag_backend if (settings.rag_enabled and retriever) else "off",
         "config_problems": settings.validate(),
     }
+
+
+@app.get("/my-ip")
+def my_ip():
+    """返回当前服务器出口 IP。
+
+    企业微信报错 60020（IP 不在白名单）时，把这个 IP 加进「企业可信IP」即可。
+    """
+    try:
+        ip = httpx.get("https://api.ipify.org", timeout=10).text.strip()
+        return {"ip": ip, "tip": "企业微信报 60020 时，把上面这个 IP 加进「企业可信IP」白名单"}
+    except Exception as e:
+        return {"ip": None, "error": str(e)[:120]}
 
 
 @app.post("/chat")
