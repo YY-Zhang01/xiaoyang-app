@@ -18,3 +18,5 @@ knowledge/
 # 测试与虚拟环境
 .pytest_cache/
 .venv/
+
+.vercel

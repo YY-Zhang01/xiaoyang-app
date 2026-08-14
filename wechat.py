@@ -2,10 +2,11 @@
 小洋 —— 企业微信接入（次要渠道）
 
 把企业微信当作小洋的一个"入口"：用户在企业微信发消息，小洋用同一套
-人设 + 同一套记忆（按 wx:{user_id} 区分）回复。密钥全部走环境变量。
+人设 + 同一套记忆（按 wx:{user_id} 区分）回复。
+
+回调消息采用企业微信的加密方案（AES），密钥全部走环境变量。
 """
 
-import hashlib
 import time
 import xml.etree.ElementTree as ET
 
@@ -16,22 +17,31 @@ from fastapi.responses import Response
 from config import get_settings
 from llm import DeepSeekClient
 from memory import MemoryManager, get_memory_store
+from wechat_crypto import WXBizMsgCrypt
 
 router = APIRouter()
 
 
-def _verify(settings, msg_signature: str, timestamp: str, nonce: str, echostr: str) -> bool:
-    sort_list = sorted([settings.wechat_token, timestamp, nonce, echostr])
-    tmp_sign = hashlib.sha1("".join(sort_list).encode(), usedforsecurity=False).hexdigest()
-    return tmp_sign == msg_signature
+def _get_crypt(settings) -> WXBizMsgCrypt:
+    if not settings.wechat_encoding_aes_key:
+        raise ValueError("WECHAT_ENCODING_AES_KEY 未配置")
+    return WXBizMsgCrypt(
+        settings.wechat_token,
+        settings.wechat_encoding_aes_key,
+        settings.wechat_corp_id,
+    )
 
 
 @router.get("/wechat")
 def wechat_verify(msg_signature: str, timestamp: str, nonce: str, echostr: str):
+    """URL 验证：校验签名 + 解密 echostr 后原样返回。"""
     settings = get_settings()
-    if _verify(settings, msg_signature, timestamp, nonce, echostr):
-        return Response(content=echostr, media_type="text/plain")
-    return Response(content="fail", status_code=403)
+    try:
+        plain = _get_crypt(settings).decrypt_echostr(msg_signature, timestamp, nonce, echostr)
+        return Response(content=plain, media_type="text/plain")
+    except Exception as e:
+        print(f"[微信验证失败] {e}")
+        return Response(content="fail", status_code=403)
 
 
 # ---- token 缓存（serverless 冷启动会重置，重新获取即可）----
@@ -79,12 +89,20 @@ def _send_wx_message(settings, user_id: str, content: str) -> None:
 async def wechat_receive(request: Request):
     settings = get_settings()
     try:
-        root = ET.fromstring((await request.body()).decode("utf-8"))
-    except Exception as e:
-        print(f"[微信] XML 解析失败: {e}")
-        return Response(content="success")
+        body = (await request.body()).decode("utf-8")
+        root = ET.fromstring(body)
 
-    try:
+        # 加密模式：密文包在 <Encrypt> 里，需要先解密
+        encrypt = root.findtext("Encrypt")
+        if encrypt is not None:
+            crypt = _get_crypt(settings)
+            msg_signature = request.query_params.get("msg_signature", "")
+            timestamp = request.query_params.get("timestamp", "")
+            nonce = request.query_params.get("nonce", "")
+            if not crypt.verify_signature(msg_signature, timestamp, nonce, encrypt):
+                raise ValueError("签名校验失败")
+            root = ET.fromstring(crypt.decrypt(encrypt))
+
         msg_type = root.findtext("MsgType") or ""
         user_id = root.findtext("FromUserName") or ""
         content = root.findtext("Content") or ""

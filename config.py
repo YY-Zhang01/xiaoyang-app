@@ -72,6 +72,7 @@ class Settings:
     wechat_agent_id: str = ""
     wechat_secret: str = ""
     wechat_token: str = ""
+    wechat_encoding_aes_key: str = ""
 
     # ---- 单用户默认标识（代码保留多用户口子，但当前产品只服务一个人）----
     user_id: str = "me"
@@ -125,6 +126,7 @@ def get_settings() -> Settings:
             wechat_agent_id=_env("WECHAT_AGENT_ID"),
             wechat_secret=_env("WECHAT_SECRET"),
             wechat_token=_env("WECHAT_TOKEN", "xiaoyang666"),
+            wechat_encoding_aes_key=_env("WECHAT_ENCODING_AES_KEY"),
             user_id=_env("USER_ID", "me"),
             allowed_origins=_env("ALLOWED_ORIGINS", "*"),
         )
