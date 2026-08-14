@@ -71,7 +71,7 @@ def _send_wx_message(settings, user_id: str, content: str) -> None:
         return
     try:
         token = _get_wx_token(settings)
-        httpx.post(
+        resp = httpx.post(
             f"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={token}",
             json={
                 "touser": user_id,
@@ -81,6 +81,8 @@ def _send_wx_message(settings, user_id: str, content: str) -> None:
             },
             timeout=10,
         )
+        data = resp.json()
+        print(f"[微信发送] touser={user_id} agentid={settings.wechat_agent_id} errcode={data.get('errcode')} errmsg={data.get('errmsg')}")
     except Exception as e:
         print(f"[微信发送失败] {e}")
 
@@ -106,6 +108,7 @@ async def wechat_receive(request: Request):
         msg_type = root.findtext("MsgType") or ""
         user_id = root.findtext("FromUserName") or ""
         content = root.findtext("Content") or ""
+        print(f"[微信收到] user={user_id} type={msg_type} msg={content[:40]}")
         if msg_type != "text" or not content or not user_id:
             return Response(content="success")
 
