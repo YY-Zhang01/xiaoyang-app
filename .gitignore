@@ -15,6 +15,9 @@ data/
 # 个人笔记知识库（隐私，用 scripts/sync_knowledge.py 生成，不提交）
 knowledge/
 
+# 个人档案（隐私，不提交到公开仓库）
+persona_facts.py
+
 # 测试与虚拟环境
 .pytest_cache/
 .venv/
