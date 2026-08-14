@@ -1,123 +1,110 @@
 # 小洋 · 后端
 
-只属于你的 AI 伙伴 —— 后端服务。FastAPI + DeepSeek，部署在 Vercel。
+一个有长期记忆的个人 AI 伴侣。FastAPI + DeepSeek + Upstash，部署在 Vercel。
 
-> 这是「小洋」产品化重构后的后端。核心命题：**小洋不是聊天机器人，是有长期记忆、知道你是谁的个人 AI 伴侣**。
+核心一句话：它不是聊天机器人，是记得你、知道你是谁的人。
 
-## 它是什么
+## 它做了什么
 
-- **人设**：`prompt.py` 里的小洋，说话像朋友，不灌鸡汤（个人档案在 `persona_facts.py`，不提交）。
-- **记忆**：两层记忆 —— 最近的对话窗口 + 由旧对话自动摘要出的「长期记忆」。存云端数据库，冷启动不丢。
-- **知识库（RAG）**：检索你的笔记，让回复「记得你学过什么」。纯 Python BM25，serverless 可用、不下载大模型。
-- **多入口**：Flutter App（主）、Web PWA、企业微信（次）。
-
-## 架构
-
-```
-xiaoyang-app/
-├── server.py       # FastAPI 入口，只做接线
-├── config.py       # 配置（全部走环境变量）
-├── prompt.py       # 小洋人设
-├── llm.py          # DeepSeek 客户端（非流式 + 流式 + 记忆摘要）
-├── memory.py       # 记忆层（对话历史 + 长期记忆 + 存储后端）
-├── rag.py          # 知识库检索（BM25，零外部依赖）
-├── wechat.py       # 企业微信接入
-├── chat_cli.py     # 命令行对话（和 App 共享同一份记忆）
-├── scripts/
-│   └── sync_knowledge.py   # 把本地笔记同步进 knowledge/
-├── tests/          # pytest
-└── static/         # Web PWA（次要渠道）
-```
-
-### 数据流（一次对话）
-
-```
-消息进来
-  → MemoryManager 从存储加载「记忆状态」
-  → 组装 system prompt = 人设 + 长期记忆
-  → RAG 检索笔记，注入相关上下文
-  → 调 DeepSeek（流式返回增量给 App）
-  → 记录本轮对话；对话过长时自动摘要成长期记忆
-  → 写回存储
-```
+- **记忆**：两层。最近的对话 + 从旧对话自动摘要出的长期记忆。存云端（Upstash），服务器重启不丢。
+- **知识库**：翻你自己的笔记（Markdown），聊到相关话题时自动引用。纯 Python 的 BM25 检索，不下载大模型，serverless 上也能跑。
+- **人设**：`prompt.py` 是可复用的模板；你的真实底细放 `persona_facts.py`（已 gitignore），两处分离，方便开源。
+- **多入口**：手机 App、网页、企业微信，三个入口共用同一份记忆。
 
 ## 核心设计
 
-### 记忆（"一直陪着你"的技术核心）
+### 记忆（重点）
 
-| 层 | 内容 | 生命周期 |
-|----|------|----------|
-| 对话历史 | 最近 N 条完整消息 | 超长后旧部分被摘要 |
-| 长期记忆 | 自动摘要出的事实（偏好/计划/情绪） | 保留最近 60 条，跨「重新开始」仍在 |
+| 层 | 存什么 | 说明 |
+|---|---|---|
+| 对话历史 | 最近 20 条完整消息 | 超了自动把旧的摘要掉 |
+| 长期记忆 | 摘要出的事实，最多 300 条 | 每条带「分类」和「重要度」 |
 
-- 存储后端可切换：`json`（本地开发，零配置）或 `upstash`（生产，冷启动不丢）。
-- 「重新开始」只清对话，**不清长期记忆** —— 她仍然记得你。
+- 摘要时让模型给每条打两个标：分类（个人/目标/健康/学习/情绪/其他）+ 重要度（1-5 分）。
+- 聊天时**按当前话题**挑相关记忆塞进 prompt（关键词相关度 + 重要度），不是死板地只取最近几条。
+- 容量满了按「重要度低、更旧」先删，重要的记得牢。
+- 「重新开始」只清对话，不清长期记忆。
 
-### RAG（serverless 真正可用）
+### 知识库（RAG）
 
-原方案用 sentence-transformers 现场下载几百 MB 模型，Vercel 冷启动会超时（实际是静默失效）。现在默认 **BM25 词法检索**：零外部依赖、零模型下载、毫秒级建索引，对个人笔记规模足够好用。
+用 sentence-transformers 现场下模型在 serverless 上会超时，所以换成纯 Python 的 BM25 词法检索：零依赖、毫秒级建索引，个人笔记这个规模够用。
 
-## 本地运行
+### 安全
+
+- 聊天接口要带 `X-API-Token`（App 用）或网页密码（网页版用），没带一律 401。
+- 企业微信走它自己的加密校验（`wechat_crypto.py` 实现了官方加解密）。
+
+## 目录
+
+```
+server.py        # 接口入口
+config.py        # 配置，全走环境变量
+prompt.py        # 人设模板（公开，无隐私）
+persona_facts.py # 你的个人档案（gitignore，不上传）
+llm.py           # 调 DeepSeek（流式 + 非流式 + 摘要）
+memory.py        # 记忆层
+rag.py           # 笔记检索（BM25）
+wechat.py        # 企业微信
+wechat_crypto.py # 企业微信加解密
+chat_cli.py      # 命令行聊天
+scripts/sync_knowledge.py  # 同步本地笔记
+tests/           # pytest
+static/          # 网页版（带密码门）
+```
+
+## 本地跑
 
 ```bash
-# 1. 用已有的 venv 或新建
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-
-# 2. 装依赖（只有 4 个，很轻）
 pip install -r requirements.txt
-
-# 3. 配环境变量（复制样例）
-copy .env.example .env
-# 编辑 .env，填 DEEPSEEK_API_KEY
-
-# 4. 同步笔记（可选，让 RAG 生效）
-python scripts/sync_knowledge.py
-
-# 5. 启动
+copy .env.example .env            # 填 DEEPSEEK_API_KEY
+python scripts/sync_knowledge.py  # 可选，让笔记检索生效
 uvicorn server:app --reload
-# http://127.0.0.1:8000/docs 看接口文档
 ```
 
 ## 环境变量
 
-见 [`.env.example`](.env.example)，关键几个：
+关键几个，全量见 `.env.example`：
 
-| 变量 | 必填 | 说明 |
-|------|------|------|
-| `DEEPSEEK_API_KEY` | ✅ | DeepSeek 密钥 |
-| `MEMORY_BACKEND` | 生产 ✅ | `json`（本地）或 `upstash`（生产） |
-| `UPSTASH_REDIS_REST_URL` / `TOKEN` | 生产 ✅ | Upstash Redis REST 连接信息 |
-| `WECHAT_CORP_ID` 等 | 可选 | 企业微信（次要渠道） |
+| 变量 | 说明 |
+|---|---|
+| `DEEPSEEK_API_KEY` | DeepSeek 密钥 |
+| `MEMORY_BACKEND` | `json`（本地）/ `upstash`（生产） |
+| `UPSTASH_REDIS_REST_URL` / `TOKEN` | 云端记忆存储 |
+| `API_TOKEN` | App 访问钥匙 |
+| `WEB_PASSWORD` | 网页版密码 |
+| `WECHAT_CORP_ID` / `AGENT_ID` / `SECRET` / `TOKEN` / `ENCODING_AES_KEY` | 企业微信 |
+| `MAX_MEMORIES_TOTAL` / `PER_CATEGORY` / `RETRIEVE_TOP_K` | 记忆容量参数 |
 
 ## API
 
+除 `/health`、`/my-ip`、`/wechat` 外，其余接口都要带 `X-API-Token`。
+
 | 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/chat` | 非流式对话，返回 `{reply, sources}` |
-| POST | `/chat/stream` | SSE 流式对话（Flutter 主用） |
-| POST | `/reset` | 重新开始（保留长期记忆） |
-| GET | `/memories` | 查看小洋的长期记忆 |
-| DELETE | `/memories` | 清空长期记忆 |
-| GET | `/health` | 健康检查 + 配置自检 |
+|---|---|---|
+| POST | `/chat` | 非流式对话 |
+| POST | `/chat/stream` | SSE 流式（App 用） |
+| POST | `/reset` | 重新开始（保留记忆） |
+| GET / DELETE | `/memories` | 看 / 清长期记忆 |
+| GET | `/my-ip` | 查当前出口 IP（企业微信白名单用） |
+| GET | `/health` | 健康检查 |
 
 ## 部署到 Vercel
 
-1. **创建 Upstash Redis**（免费额度够用）：upstash.com → Create Database → 拿到 REST URL 和 Token。
-2. **同步笔记**：`python scripts/sync_knowledge.py`（生成 `knowledge/`，会随部署一起上传；该目录已 gitignore，属个人隐私）。
-3. **推送代码**到 GitHub，在 Vercel import 这个仓库。
-4. **配环境变量**（Vercel → Settings → Environment Variables）：
-   - `DEEPSEEK_API_KEY`
-   - `MEMORY_BACKEND=upstash`
-   - `UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN`
-5. Deploy。`GET /health` 返回 `memory_backend: upstash` 即成功。
+1. upstash.com 建个免费 Redis，拿 REST URL 和 Token。
+2. `python scripts/sync_knowledge.py` 同步笔记（生成 `knowledge/`，随部署上传；已 gitignore）。
+3. Vercel 建项目，配好环境变量（`MEMORY_BACKEND=upstash`）。
+4. 部署。访问 `/health` 看到 `memory_backend: upstash` 就成。
 
-> 注意：笔记更新后需重新跑 `sync_knowledge.py` 并重新部署，RAG 才拿得到新内容。
+## 企业微信的一个坑
+
+企业微信有「企业可信 IP」白名单，Vercel 的出口 IP 会变。IP 变了企业微信就回不了消息，报 60020。处理：访问 `/my-ip` 拿当前 IP，加进白名单。
+
+## 隐私
+
+三个东西不要传公开仓库：`persona_facts.py`（个人档案）、`.env`（密钥）、`knowledge/`（笔记）。都已 gitignore。
 
 ## 测试
 
 ```bash
 python -m pytest -q
 ```
-
-覆盖：记忆存储读写、长对话自动摘要、重置保留记忆、BM25 检索与中文分词、长文本切片。
