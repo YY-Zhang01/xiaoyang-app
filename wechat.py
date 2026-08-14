@@ -114,7 +114,8 @@ async def wechat_receive(request: Request):
 
         llm = DeepSeekClient(settings)
         store = get_memory_store(settings)
-        mgr = MemoryManager(f"wx:{user_id}", store, llm, settings)
+        # 三个入口（App / 网页 / 企业微信）共用同一份记忆，都归到 settings.user_id
+        mgr = MemoryManager(settings.user_id, store, llm, settings)
         msgs = mgr.messages_for_llm()
         msgs.append({"role": "user", "content": content})
         reply = llm.chat(msgs)
