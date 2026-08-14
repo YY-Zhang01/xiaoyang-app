@@ -1,3 +1,8 @@
+import base64
+import os
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
 from wechat_crypto import WXBizMsgCrypt
 
 # 43 个字符的测试 EncodingAESKey（对应 32 字节全零 AES 密钥）
@@ -30,6 +35,23 @@ def test_corp_id_mismatch_rejected():
         assert False, "应当因 receiveid 不匹配而抛异常"
     except ValueError:
         pass
+
+
+def test_32_byte_block_padding():
+    """回归测试：企业微信用 32 字节块填充，且消息长到 pad>16 时也必须能解密。"""
+    crypt = WXBizMsgCrypt(TOKEN, KEY, CORP_ID)
+    msg = "你好世界" * 10  # 40 字节，容易让 pad 超过 16
+    content = os.urandom(16) + len(msg.encode()).to_bytes(4, "big") + msg.encode() + CORP_ID.encode()
+    # 按企业微信规范做 32 字节块 PKCS7 填充
+    pad = 32 - (len(content) % 32)
+    if pad == 0:
+        pad = 32
+    padded = content + bytes([pad]) * pad
+    cipher = Cipher(algorithms.AES(crypt.aes_key), modes.CBC(crypt.aes_key[:16]))
+    encryptor = cipher.encryptor()
+    ciphertext = encryptor.update(padded) + encryptor.finalize()
+    encrypted = base64.b64encode(ciphertext).decode()
+    assert crypt.decrypt(encrypted) == msg
 
 
 def test_echostr_flow():

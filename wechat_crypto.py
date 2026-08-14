@@ -5,7 +5,8 @@
 - 签名：msg_signature = SHA1(sort([token, timestamp, nonce, encrypt]))
 - 密文结构：random(16字节) + msg_len(4字节大端) + msg + receiveid
   其中企业微信的 receiveid 就是 CorpID
-- AES-256-CBC，Key = base64_decode(EncodingAESKey + "=")，IV = Key[:16]，PKCS7 填充
+- AES-256-CBC，Key = base64_decode(EncodingAESKey + "=")，IV = Key[:16]
+- 填充：企业微信用 32 字节块的 PKCS7（不是标准 16 字节块，这是常见坑）
 """
 
 import base64
@@ -42,11 +43,11 @@ class WXBizMsgCrypt:
         cipher = Cipher(algorithms.AES(self.aes_key), modes.CBC(self.aes_key[:16]))
         decryptor = cipher.decryptor()
         padded = decryptor.update(ciphertext) + decryptor.finalize()
-        unpadder = _padding.PKCS7(128).unpadder()
+        unpadder = _padding.PKCS7(256).unpadder()
         return unpadder.update(padded) + unpadder.finalize()
 
     def _aes_encrypt(self, plaintext: bytes) -> bytes:
-        padder = _padding.PKCS7(128).padder()
+        padder = _padding.PKCS7(256).padder()
         padded = padder.update(plaintext) + padder.finalize()
         cipher = Cipher(algorithms.AES(self.aes_key), modes.CBC(self.aes_key[:16]))
         encryptor = cipher.encryptor()
