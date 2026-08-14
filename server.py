@@ -13,11 +13,13 @@
 """
 
 import json
+import os
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import wechat as wechat_mod
@@ -56,8 +58,9 @@ def _uid(req_user_id: str | None) -> str:
 
 
 def require_api_token(x_api_token: str = Header(default="", alias="X-API-Token")):
-    """校验 API 访问令牌；API_TOKEN 未配置时放行（仅本地开发）。"""
-    if settings.api_token and x_api_token != settings.api_token:
+    """校验访问令牌。App 用 API_TOKEN，网页版用 WEB_PASSWORD；两者都未配置时放行（本地开发）。"""
+    valid = [t for t in (settings.api_token, settings.web_password) if t]
+    if valid and x_api_token not in valid:
         raise HTTPException(status_code=401, detail="无效的访问令牌")
     return x_api_token
 
@@ -213,5 +216,7 @@ def delete_memories(req: UserRequest, _token: str = Depends(require_api_token)):
 # 企业微信（次要渠道）
 app.include_router(wechat_mod.router)
 
-# 说明：公开的网页前端已关闭（防止陌生人直接访问聊天）。
-# 现在只保留两个入口：Flutter App（带 API Token）、企业微信（自带加密校验）。
+# 网页前端（带密码门），必须最后挂载
+_static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+if os.path.isdir(_static_dir):
+    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="static")

@@ -79,6 +79,8 @@ class Settings:
 
     # ---- API 访问密钥（保护聊天接口，防止陌生人使用；空 = 不校验，仅本地开发用）----
     api_token: str = ""
+    # 网页版入口密码（网页用户输入后作为令牌；App 用 api_token）
+    web_password: str = ""
 
     # ---- CORS（逗号分隔）----
     allowed_origins: str = "*"
@@ -132,6 +134,7 @@ def get_settings() -> Settings:
             wechat_encoding_aes_key=_env("WECHAT_ENCODING_AES_KEY"),
             user_id=_env("USER_ID", "me"),
             api_token=_env("API_TOKEN"),
+            web_password=_env("WEB_PASSWORD"),
             allowed_origins=_env("ALLOWED_ORIGINS", "*"),
         )
     return _settings

@@ -175,9 +175,39 @@
                 box-shadow: none;
             }
         }
+        /* 密码门 */
+        .password-gate {
+            position: fixed; inset: 0;
+            background: #eef1f5;
+            display: flex; justify-content: center; align-items: center;
+            z-index: 100;
+        }
+        .password-gate.hidden { display: none; }
+        .password-box { text-align: center; width: 260px; }
+        .password-title { font-size: 28px; color: #526477; letter-spacing: 4px; margin-bottom: 6px; }
+        .password-sub { font-size: 12px; color: #a0b0c0; margin-bottom: 20px; }
+        .password-box input {
+            width: 100%; padding: 11px 16px; border: 1px solid #d8dfe6; border-radius: 24px;
+            font-size: 14px; outline: none; text-align: center; margin-bottom: 12px;
+            background: #fff; color: #4a5568; box-sizing: border-box;
+        }
+        .password-box button {
+            width: 100%; padding: 11px; border: none; border-radius: 24px;
+            background: #527a9e; color: #fff; font-size: 14px; cursor: pointer;
+        }
+        .password-error { color: #c0392b; font-size: 12px; margin-top: 10px; min-height: 16px; }
     </style>
 </head>
 <body>
+    <div id="passwordGate" class="password-gate">
+        <div class="password-box">
+            <div class="password-title">小 洋</div>
+            <div class="password-sub">只属于你的，输入密码进入</div>
+            <input type="password" id="passwordInput" placeholder="密码" autocomplete="current-password">
+            <button id="passwordBtn">进入</button>
+            <div id="passwordError" class="password-error"></div>
+        </div>
+    </div>
     <div class="chat-container">
         <div class="chat-header">
             <div class="chat-header-row">
@@ -203,9 +233,36 @@
     </div>
 
     <script>
+        let token = localStorage.getItem('xiaoyang_pass') || '';
         const messagesDiv = document.getElementById('messages');
         const userInput = document.getElementById('userInput');
         const sendBtn = document.getElementById('sendBtn');
+        const passwordGate = document.getElementById('passwordGate');
+        const passwordInput = document.getElementById('passwordInput');
+        const passwordBtn = document.getElementById('passwordBtn');
+        const passwordError = document.getElementById('passwordError');
+
+        function showPasswordGate(msg) {
+            passwordGate.classList.remove('hidden');
+            passwordError.textContent = msg || '';
+            passwordInput.value = '';
+        }
+        function hidePasswordGate() {
+            passwordGate.classList.add('hidden');
+        }
+        passwordBtn.addEventListener('click', () => {
+            const p = passwordInput.value.trim();
+            if (!p) return;
+            token = p;
+            localStorage.setItem('xiaoyang_pass', p);
+            hidePasswordGate();
+        });
+        passwordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') passwordBtn.click();
+        });
+        if (!token) {
+            showPasswordGate('');
+        }
 
         // 滚动到底部
         function scrollToBottom() {
@@ -239,9 +296,18 @@
             try {
                 const response = await fetch('/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-API-Token': token },
                     body: JSON.stringify({ message: text })
                 });
+
+                if (response.status === 401) {
+                    token = '';
+                    localStorage.removeItem('xiaoyang_pass');
+                    showPasswordGate('密码不对，再试一次');
+                    typingDiv.remove();
+                    userInput.value = text;
+                    return;
+                }
 
                 const data = await response.json();
 
@@ -259,7 +325,7 @@
 
         // 重置对话
         async function resetChat() {
-            await fetch('/reset', { method: 'POST' });
+            await fetch('/reset', { method: 'POST', headers: { 'X-API-Token': token } });
             messagesDiv.innerHTML = '';
             addMessage('嗯，我在。', 'bot');
         }
