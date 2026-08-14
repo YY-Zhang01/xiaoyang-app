@@ -13,13 +13,11 @@
 """
 
 import json
-import os
 
 import httpx
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import wechat as wechat_mod
@@ -55,6 +53,13 @@ class UserRequest(BaseModel):
 
 def _uid(req_user_id: str | None) -> str:
     return req_user_id or settings.user_id
+
+
+def require_api_token(x_api_token: str = Header(default="", alias="X-API-Token")):
+    """校验 API 访问令牌；API_TOKEN 未配置时放行（仅本地开发）。"""
+    if settings.api_token and x_api_token != settings.api_token:
+        raise HTTPException(status_code=401, detail="无效的访问令牌")
+    return x_api_token
 
 
 def _retrieve_context(query: str) -> tuple[str, list[str]]:
@@ -144,7 +149,7 @@ def my_ip():
 
 
 @app.post("/chat")
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, _token: str = Depends(require_api_token)):
     mgr = MemoryManager(_uid(req.user_id), store, llm, settings)
     ctx, sources = _retrieve_context(req.message)
     msgs = _build_llm_messages(mgr, req.message, ctx)
@@ -157,7 +162,7 @@ def chat(req: ChatRequest):
 
 
 @app.post("/chat/stream")
-def chat_stream(req: ChatRequest):
+def chat_stream(req: ChatRequest, _token: str = Depends(require_api_token)):
     """SSE 流式对话，供 Flutter App 使用。"""
     mgr = MemoryManager(_uid(req.user_id), store, llm, settings)
     ctx, sources = _retrieve_context(req.message)
@@ -184,7 +189,7 @@ def chat_stream(req: ChatRequest):
 
 
 @app.post("/reset")
-def reset(req: UserRequest):
+def reset(req: UserRequest, _token: str = Depends(require_api_token)):
     """重新开始：清空当前对话，但保留长期记忆（她仍然记得你）。"""
     mgr = MemoryManager(_uid(req.user_id), store, llm, settings)
     mgr.reset()
@@ -192,14 +197,14 @@ def reset(req: UserRequest):
 
 
 @app.get("/memories")
-def get_memories(user_id: str | None = None):
+def get_memories(user_id: str | None = None, _token: str = Depends(require_api_token)):
     """看看小洋记住了什么（透明化）。"""
     mgr = MemoryManager(_uid(user_id), store, llm, settings)
     return {"memories": mgr.state.memories}
 
 
 @app.delete("/memories")
-def delete_memories(req: UserRequest):
+def delete_memories(req: UserRequest, _token: str = Depends(require_api_token)):
     mgr = MemoryManager(_uid(req.user_id), store, llm, settings)
     mgr.reset_memories()
     return {"status": "ok"}
@@ -208,7 +213,5 @@ def delete_memories(req: UserRequest):
 # 企业微信（次要渠道）
 app.include_router(wechat_mod.router)
 
-# 静态前端（Web PWA，次要渠道），必须最后挂载
-_static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-if os.path.isdir(_static_dir):
-    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="static")
+# 说明：公开的网页前端已关闭（防止陌生人直接访问聊天）。
+# 现在只保留两个入口：Flutter App（带 API Token）、企业微信（自带加密校验）。

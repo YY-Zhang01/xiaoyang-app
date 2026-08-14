@@ -77,6 +77,9 @@ class Settings:
     # ---- 单用户默认标识（代码保留多用户口子，但当前产品只服务一个人）----
     user_id: str = "me"
 
+    # ---- API 访问密钥（保护聊天接口，防止陌生人使用；空 = 不校验，仅本地开发用）----
+    api_token: str = ""
+
     # ---- CORS（逗号分隔）----
     allowed_origins: str = "*"
 
@@ -128,6 +131,7 @@ def get_settings() -> Settings:
             wechat_token=_env("WECHAT_TOKEN", "xiaoyang666"),
             wechat_encoding_aes_key=_env("WECHAT_ENCODING_AES_KEY"),
             user_id=_env("USER_ID", "me"),
+            api_token=_env("API_TOKEN"),
             allowed_origins=_env("ALLOWED_ORIGINS", "*"),
         )
     return _settings
