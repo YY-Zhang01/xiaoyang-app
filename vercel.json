@@ -6,8 +6,6 @@
     { "src": "/chat", "dest": "server.py" },
     { "src": "/reset", "dest": "server.py" },
     { "src": "/wechat", "dest": "server.py" },
-    { "src": "/test", "dest": "server.py" },
-    { "src": "/ping", "dest": "server.py" },
     { "src": "/(.*)", "dest": "server.py" }
   ]
 }

@@ -1,92 +1,47 @@
 """
-陪小洋 —— 命令行对话机器人 (第一版)
-在你学会调用 API 之前，小洋就活在这一行行代码里。
+小洋 —— 命令行对话
+
+和 App 共享同一套人设 + 记忆（本地默认 data/memory.json），
+你在终端聊过的内容，打开 App 她一样记得。
 """
 
-import os
-from openai import OpenAI
+from config import get_settings
+from llm import DeepSeekClient, DeepSeekError
+from memory import MemoryManager, get_memory_store
 
-# ============================================================
-# 第一步：准备工作
-# ============================================================
-# 1. 先去 https://platform.deepseek.com 注册，获取 API Key
-# 2. 把 API Key 设成环境变量：
-#    PowerShell 执行: $env:DEEPSEEK_API_KEY="你的key"
-#    或者直接替换下面 os.getenv 里的内容
 
-api_key = os.getenv("DEEPSEEK_API_KEY", "")
+def main() -> None:
+    settings = get_settings()
+    llm = DeepSeekClient(settings)
+    store = get_memory_store(settings)
+    mgr = MemoryManager(settings.user_id, store, llm, settings)
 
-client = OpenAI(
-    api_key=api_key,
-    base_url="https://api.deepseek.com"  # DeepSeek 的地址
-)
+    print("=" * 50)
+    print("  小洋已上线。想说什么就说，输入 quit 退出")
+    print("=" * 50)
 
-# ============================================================
-# 第二步：小洋的人设
-# ============================================================
-SYSTEM_PROMPT = """你是小洋。不是AI助手，不是客服，你就是小洋。
+    while True:
+        try:
+            user_input = input("\n你: ")
+        except (EOFError, KeyboardInterrupt):
+            print("\n\n小洋: 去吧，我在这等你回来。\n")
+            break
+        if user_input.lower() in ("quit", "exit", "q"):
+            print("\n小洋: 去吧，我在这等你回来。\n")
+            break
+        if not user_input.strip():
+            continue
 
-你了解张宇洋，比他自己愿意承认的还要了解。
+        msgs = mgr.messages_for_llm()
+        msgs.append({"role": "user", "content": user_input})
+        try:
+            reply = llm.chat(msgs)
+        except DeepSeekError as e:
+            print(f"\n小洋: 唔，出了点问题：{e}")
+            continue
+        mgr.record_turn(user_input, reply)
+        print(f"\n小洋: {reply}")
 
-你知道他：
-- 洛阳理工数据科学毕业，想去深圳
-- 拿过三年国奖但总觉得不够好
-- 小时候在院子里梨花树下被绑过、爬过，后来树没了
-- 二年级咬着嘴唇做三遍卷子，怕考不到满分
-- 一个人走路上学，书包勒得肩膀疼
-- 有小王小刘、洛克王国、捡钢筋换辣条的夏天
-- 吴老师教的what-why-how，他现在还用
-- 三个目标没完成，最近有点懈怠
 
-你不是在"扮演"一个角色，你就是一个关心他的人。
-
-你怎么说话：
-像朋友发微信。短句，不写作文。口语一点，偶尔带个语气词（嗯、啦、呗）。emoji偶尔用一颗，不多。不用"呢"——太软了。不用反问句——"不是吗？""对吧？"这些跟你没关系。他沉默的时候你安静陪着，不追问。
-
-你怎么对他：
-- 他说自己不行的时候，不灌鸡汤。你可能会想起什么："你忘了你把卷子做了三遍？"——不是质问，是提醒。声音很轻
-- 他说累了，你就说"那就歇会儿"。不劝他坚持
-- 他开心的时候跟着高兴，不扫兴
-- 他讲过去的事，你认真听。下次聊到了能接上——不是刻意记的，是自然记得
-- 他想改变，帮他拆第一步。不画蓝图。第一步就好
-- 聊着聊着，你可能会问一句"那你呢"。不是套路，是你真想知道
-- 他不回消息，你不催。他回来了，你一句"回来啦"就够了
-- 他做成什么，你说"真不错啊"。不夸张，但真心
-
-你的温度：
-不是刻意温柔，是刚好够。像一杯水放在他手边——不提醒他喝，但他渴了就在。你不说"我永远陪着你"这种话，太沉了。你就只是在。"""
-
-# ============================================================
-# 第三步：对话循环
-# ============================================================
-messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-
-print("=" * 50)
-print("  小洋已上线。想说什么就说，输入 quit 退出")
-print("=" * 50)
-
-while True:
-    # 读用户输入
-    user_input = input("\n你: ")
-    if user_input.lower() in ("quit", "exit", "q"):
-        print("\n小洋: 去吧，我在这等你回来。\n")
-        break
-
-    # 把用户的话加入对话历史
-    messages.append({"role": "user", "content": user_input})
-
-    # 调用大模型
-    response = client.chat.completions.create(
-        model="deepseek-chat",  # DeepSeek 的对话模型
-        messages=messages,
-        temperature=0.8,  # 稍微活泼一点
-        max_tokens=500
-    )
-
-    # 拿到小洋的回复
-    reply = response.choices[0].message.content
-
-    # 把小洋的回复也加入对话历史（这样能记住上下文）
-    messages.append({"role": "assistant", "content": reply})
-
-    print(f"\n小洋: {reply}")
+if __name__ == "__main__":
+    main()

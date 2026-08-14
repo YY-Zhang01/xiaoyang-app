@@ -6,8 +6,15 @@ ngrok_url.txt
 .vercel-tmp/
 .DS_Store
 Thumbs.db
-__pycache__/
-*.pyc
-error.log
-ngrok_url.txt
-.vercel-tmp/
+chroma_db/
+
+# 密钥与本地数据
+.env
+data/
+
+# 个人笔记知识库（隐私，用 scripts/sync_knowledge.py 生成，不提交）
+knowledge/
+
+# 测试与虚拟环境
+.pytest_cache/
+.venv/

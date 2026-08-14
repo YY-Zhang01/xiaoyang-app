@@ -1,3 +1,12 @@
-httpx
-fastapi
-pydantic
+# ============================================================
+# 小洋 —— Python 依赖（生产最小集）
+#
+# 说明：原 langchain / chromadb / sentence-transformers 已移除。
+# 它们会要求 serverless 冷启动时现场下载几百 MB 模型导致超时，
+# 已由 rag.py 里的纯 Python BM25 检索替代（零额外依赖）。
+# ============================================================
+
+fastapi>=0.100.0
+httpx>=0.24.0
+uvicorn>=0.22.0
+pydantic>=2.0.0
