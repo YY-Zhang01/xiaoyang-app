@@ -102,13 +102,43 @@ def health():
 
 @app.get("/my-ip")
 def my_ip():
-    """返回当前服务器出口 IP。
+    """返回企业微信「实际看到的」服务器出口 IP。
 
-    企业微信报错 60020（IP 不在白名单）时，把这个 IP 加进「企业可信IP」即可。
+    做法：用一个无效 touser 调 message/send，若 IP 未在白名单，企业微信会返回
+    60020 并在 errmsg 里带上真实的 from ip —— 这个 IP 才是要加进白名单的那个。
     """
+    import re
+
     try:
-        ip = httpx.get("https://api.ipify.org", timeout=10).text.strip()
-        return {"ip": ip, "tip": "企业微信报 60020 时，把上面这个 IP 加进「企业可信IP」白名单"}
+        token_resp = httpx.get(
+            "https://qyapi.weixin.qq.com/cgi-bin/gettoken",
+            params={"corpid": settings.wechat_corp_id, "corpsecret": settings.wechat_secret},
+            timeout=10,
+        )
+        token = token_resp.json().get("access_token")
+        if not token:
+            return {"ip": None, "error": "gettoken 失败，检查 Secret"}
+
+        send_resp = httpx.post(
+            f"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={token}",
+            json={
+                "touser": "__ip_check__",
+                "msgtype": "text",
+                "agentid": settings.wechat_agent_id,
+                "text": {"content": "x"},
+            },
+            timeout=10,
+        )
+        data = send_resp.json()
+        errcode = data.get("errcode")
+        errmsg = data.get("errmsg", "")
+
+        if errcode == 60020:
+            m = re.search(r"from ip: ([\d.]+)", errmsg)
+            ip = m.group(1) if m else None
+            return {"ip": ip, "tip": "把这个 IP 加进「企业可信IP」白名单"}
+        # 不是 60020 说明 IP 校验已经通过（40003=无效touser 等其它错误都无妨）
+        return {"ip": None, "ok": True, "tip": "当前出口 IP 已在白名单内", "errcode": errcode, "errmsg": errmsg}
     except Exception as e:
         return {"ip": None, "error": str(e)[:120]}
 
